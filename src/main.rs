@@ -1,6 +1,6 @@
 use futures::SinkExt;
 use std::sync::mpsc::{Sender,Receiver,channel};
-use http::{Request, StatusCode};
+use http::{StatusCode, Method};
 use std::{error::Error};
 use tokio::net::TcpStream;
 use tokio::stream::StreamExt;
@@ -133,7 +133,9 @@ async fn process(stream: TcpStream, payload: &Payload, tx: Sender<u8>) -> Result
 
     loop {
 
-        let request = Request::get(payload.path.clone())
+        let method = Method::from_bytes(payload.method.as_bytes()).unwrap();
+
+        let request = http::request::Builder::new().method(method).uri(payload.path.clone())
             .header("Host", payload.host.clone())
             .header("Content-Type", "application/json")
             .body(payload.body.clone()).unwrap();
