@@ -1,5 +1,5 @@
 [package]
-name = "wb"
+name = "yaya"
 version = "0.1.0"
 authors = ["yanfeng.li <yanfeng.li@yunqueyi.com>"]
 edition = "2018"
@@ -16,7 +16,7 @@ serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
 httparse = "1.0"
-time = "0.1"
+url = "2.1"
 
 [dependencies.clap]
 version = "2.33.0"

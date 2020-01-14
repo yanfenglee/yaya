@@ -1,9 +1,7 @@
 use bytes::BytesMut;
 use http::{Request, Response, StatusCode};
-use std::{error::Error, fmt, io};
-use tokio::net::TcpStream;
-use tokio::stream::StreamExt;
-use tokio_util::codec::{Decoder, Encoder, Framed};
+use std::{fmt, io};
+use tokio_util::codec::{Decoder, Encoder};
 
 pub struct Http;
 
@@ -17,9 +15,10 @@ impl Encoder for Http {
         write!(
             BytesWrite(dst),
             "\
-            GET {} HTTP/1.1\r\n\
+            {} {} HTTP/1.1\r\n\
             Content-Length: {}\r\n\
             ",
+            item.method().as_str(),
             item.uri().path(),
             item.body().len(),
         )

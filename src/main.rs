@@ -1,18 +1,19 @@
 use futures::SinkExt;
 use std::sync::mpsc::{Sender,Receiver,channel};
-use http::{Request, Response, StatusCode};
-use std::{error::Error, fmt, io};
+use http::{Request, StatusCode};
+use std::{error::Error};
 use tokio::net::TcpStream;
 use tokio::stream::StreamExt;
-use tokio_util::codec::{Decoder, Encoder, Framed};
+use tokio_util::codec::{Framed};
 use std::time::{Instant};
-mod simple_http;
-use simple_http::Http;
+use yaya::simple_http::Http;
+use yaya::Payload;
+use url::Url;
 
 extern crate clap;
 use clap::{Arg, App};
 
-fn opts() -> (u32, u32, String) {
+fn opts() -> (u32, u32, String, String, String) {
     let matches = App::new("Simple http benchmark tool")
                             .version("1.0")
                             .author("liyanfeng <yanfeng.li@picahealth.com>")
@@ -26,6 +27,16 @@ fn opts() -> (u32, u32, String) {
                                 .long("duration")
                                 .help("Duration(seconds) of test")
                                 .takes_value(true))
+                            .arg(Arg::with_name("method")
+                                .short("X")
+                                .long("method")
+                                .help("http method: GET,POST,DELETE,PUT...")
+                                .takes_value(true))
+                            .arg(Arg::with_name("body")
+                                .short("b")
+                                .long("body")
+                                .help("http body")
+                                .takes_value(true))
                             .arg(Arg::with_name("url")
                                 .help("url to test")
                                 .required(true)
@@ -34,31 +45,62 @@ fn opts() -> (u32, u32, String) {
 
     let connections: u32 = matches.value_of("connections").unwrap_or("100").parse().unwrap();
     let duration: u32 = matches.value_of("duration").unwrap_or("10").parse().unwrap();
-    let url = matches.value_of("url").unwrap_or("localhost:8080").to_string();
+    let method: String = matches.value_of("method").unwrap_or("GET").parse().unwrap();
+    let body: String = matches.value_of("body").unwrap_or("{}").parse().unwrap();
+    let url = matches.value_of("url").unwrap().to_string();
 
-    (connections, duration, url)
+    (connections, duration, method, body, url)
     
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
 
-    let (connections, duration, url) = opts();
-    
-    let addr = url;
+    let (connections, duration, method, body, urlstr) = opts();
+
+    let url = match Url::parse(urlstr.as_str()) {
+        Ok(u) => u,
+        Err(_) => {
+            println!("url error, example: http://localhost:8080/");
+            return Ok(());
+        }
+    };
+
+    let port = match url.port() {
+        Some(p) => format!(":{}",p),
+        None => String::from(""),
+    };
+
+    let host = match url.host_str() {
+        Some(h) => String::from(h),
+        None => {
+            println!("url error, e.g: http://localhost:8080/");
+            return Ok(());
+        }
+    };
+
+    let payload = Payload {
+        host: host + port.as_str(),
+        path: String::from(url.path()),
+        method: method,
+        body: body,
+    };
+
+    println!("{:?}", payload);
 
 
     let (tx, rx): (Sender<u8>, Receiver<u8>) = channel();
 
     for _ in 0..connections {
         let tx = tx.clone();
-        let addr = addr.clone();
+        let addr = payload.host.clone();
+        let payload = payload.clone();
 
         tokio::spawn(async move {
 
-            let client = TcpStream::connect(&addr).await.unwrap();
+            let client = TcpStream::connect(addr).await.unwrap();
     
-            if let Err(e) = process(client, tx).await {
+            if let Err(e) = process(client, &payload, tx).await {
                 println!("failed to process connection; error = {}", e);
             }
         });
@@ -85,16 +127,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn process(stream: TcpStream, tx: Sender<u8>) -> Result<(), Box<dyn Error>> {
+async fn process(stream: TcpStream, payload: &Payload, tx: Sender<u8>) -> Result<(), Box<dyn Error>> {
     
     let mut transport = Framed::new(stream, Http);
 
     loop {
 
-        let request = Request::get("/")
-            .header("Host","localhost:8080")
-            .header("User-Agent","wb")
-            .body("hello".to_string()).unwrap();
+        let request = Request::get(payload.path.clone())
+            .header("Host", payload.host.clone())
+            .header("Content-Type", "application/json")
+            .body(payload.body.clone()).unwrap();
 
         transport.send(request).await?;
 
