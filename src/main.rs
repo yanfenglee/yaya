@@ -9,6 +9,7 @@ use std::time::{Instant};
 use yaya::simple_http::Http;
 use yaya::Payload;
 use url::Url;
+use std::net::Shutdown;
 
 extern crate clap;
 use clap::{Arg, App};
@@ -91,18 +92,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let (tx, rx): (Sender<u8>, Receiver<u8>) = channel();
 
-    for _ in 0..connections {
+    for i in 0..connections {
         let tx = tx.clone();
         let addr = payload.host.clone();
         let payload = payload.clone();
 
         tokio::spawn(async move {
 
-            let client = TcpStream::connect(addr).await.unwrap();
-    
-            if let Err(e) = process(client, &payload, tx).await {
-                println!("failed to process connection; error = {}", e);
+            loop {
+                println!("new connectoin begin-----{}-------------", i);
+                let tx = tx.clone();
+                match TcpStream::connect(&addr).await {
+                    Ok(client) => {
+                        println!("new connectoin------{}------------", i);
+                        if let Err(e) = process(client, &payload, tx).await {
+                            println!("failed to process connection; error = {}, i={}", e,i);
+                        }
+                    },
+                    Err(e) => {
+                        println!("new connectoin error------{}----{}--------", i,e);
+                    }
+                }
             }
+            
         });
     }
 
@@ -140,19 +152,34 @@ async fn process(stream: TcpStream, payload: &Payload, tx: Sender<u8>) -> Result
             .header("Content-Type", "application/json")
             .body(payload.body.clone()).unwrap();
 
-        transport.send(request).await?;
+        match transport.send(request).await {
+            Ok(_) => {
+                if let Some(response) = transport.next().await {
+                    match response {
+                        Ok(response) => if response.status()==StatusCode::OK {
+                            if let Err(_) = tx.send(1) {
+                                break;
+                            }
+                        },
 
-        if let Some(response) = transport.next().await {
-            match response {
-                Ok(response) => if response.status()==StatusCode::OK {
-                    if let Err(_) = tx.send(1) {
-                        break;
+                        Err(e) => {
+                            println!("{}", e);
+                            break;
+                        }
                     }
-                },
+                }
+            },
 
-                Err(e) => println!("{}", e)
+            Err(e) => {
+                println!("{}", e);
+                break;
             }
         }
+
+    }
+
+    if let Ok(_) = transport.get_mut().shutdown(Shutdown::Both){
+        println!("close connection...");
     }
 
     Ok(())
