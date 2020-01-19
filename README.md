@@ -23,3 +23,6 @@ OPTIONS:
 ARGS:
     <url>    url to test
 ```
+#### How to build
+1. install rust: https://rustup.rs/
+2. cd yaya && cargo build --release
