@@ -9,15 +9,17 @@ use std::time::{Instant};
 use yaya::simple_http::Http;
 use yaya::Payload;
 use url::Url;
-use std::net::Shutdown;
 
 extern crate clap;
 use clap::{Arg, App};
 
+//use std::sync::atomic::{AtomicUsize, Ordering};
+//static GLOBAL_COUNT: AtomicUsize = AtomicUsize::new(0);
+
 fn opts() -> (u32, u32, String, String, String) {
     let matches = App::new("Simple http benchmark tool")
                             .version("1.0")
-                            .author("liyanfeng <yanfeng.li@picahealth.com>")
+                            .author("liyanfeng <muxsdt@gmail.com>")
                             .arg(Arg::with_name("connections")
                                 .short("c")
                                 .long("connections")
@@ -100,17 +102,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
         tokio::spawn(async move {
 
             loop {
-                println!("new connectoin begin-----{}-------------", i);
+                //println!("new connectoin begin-----{}-------------", i);
                 let tx = tx.clone();
                 match TcpStream::connect(&addr).await {
                     Ok(client) => {
-                        println!("new connectoin------{}------------", i);
+                        //println!("new connectoin------{}------------", i);
                         if let Err(e) = process(client, &payload, tx).await {
                             println!("failed to process connection; error = {}, i={}", e,i);
                         }
                     },
                     Err(e) => {
                         println!("new connectoin error------{}----{}--------", i,e);
+                        break;
                     }
                 }
             }
@@ -147,7 +150,11 @@ async fn process(stream: TcpStream, payload: &Payload, tx: Sender<u8>) -> Result
 
         let method = Method::from_bytes(payload.method.as_bytes()).unwrap();
 
-        let request = http::request::Builder::new().method(method).uri(payload.path.clone())
+        //let count = GLOBAL_COUNT.fetch_add(1, Ordering::SeqCst);
+
+        let request = http::request::Builder::new()
+            .method(method)
+            .uri(payload.path.clone())
             .header("Host", payload.host.clone())
             .header("Content-Type", "application/json")
             .body(payload.body.clone()).unwrap();
@@ -160,6 +167,10 @@ async fn process(stream: TcpStream, payload: &Payload, tx: Sender<u8>) -> Result
                             if let Err(_) = tx.send(1) {
                                 break;
                             }
+                        } else {
+                            let _ = tx.send(1);
+                            //println!("connect close......................");
+                            break;
                         },
 
                         Err(e) => {
@@ -178,9 +189,7 @@ async fn process(stream: TcpStream, payload: &Payload, tx: Sender<u8>) -> Result
 
     }
 
-    if let Ok(_) = transport.get_mut().shutdown(Shutdown::Both){
-        println!("close connection...");
-    }
+    let _ = transport.get_ref().shutdown(std::net::Shutdown::Both);
 
     Ok(())
 }
