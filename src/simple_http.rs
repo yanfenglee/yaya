@@ -10,7 +10,7 @@ impl Encoder for Http {
     type Item = Request<String>;
     type Error = io::Error;
 
-    fn encode(&mut self, item: Request<String>, dst: &mut BytesMut) -> io::Result<()> {
+    fn encode(&mut self, item: Self::Item, dst: &mut BytesMut) -> io::Result<()> {
         use std::fmt::Write;
 
         write!(

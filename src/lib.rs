@@ -3,7 +3,7 @@
 pub struct Payload {
     pub host: String,
     pub path: String,
-    pub method: String,
+    pub method: http::Method,
     pub body: String,
 }
 

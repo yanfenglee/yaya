@@ -56,6 +56,7 @@ fn opts() -> (u32, u32, String, String, String) {
     
 }
 
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
 
@@ -82,6 +83,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
+    let method = Method::from_bytes(method.as_bytes()).unwrap();
+
     let payload = Payload {
         host: host + port.as_str(),
         path: String::from(url.path()),
@@ -91,13 +94,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     println!("{:?}", payload);
 
-
     let (tx, rx): (Sender<u8>, Receiver<u8>) = channel();
 
     for i in 0..connections {
         let tx = tx.clone();
-        let addr = payload.host.clone();
         let payload = payload.clone();
+        let addr = payload.host.clone();
 
         tokio::spawn(async move {
 
@@ -106,10 +108,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let tx = tx.clone();
                 match TcpStream::connect(&addr).await {
                     Ok(client) => {
-                        //println!("new connectoin------{}------------", i);
-                        if let Err(e) = process(client, &payload, tx).await {
-                            println!("failed to process connection; error = {}, i={}", e,i);
+                                        
+                        let mut transport = Framed::new(client, Http);
+
+                        loop {
+                            let tx = tx.clone();
+                            if let Err(e) = docall(&mut transport, &payload, tx).await {
+                                println!("failed to process connection; error = {}, i={}", e,i);
+                                break;
+                            }
                         }
+
+                        let _ = transport.get_ref().shutdown(std::net::Shutdown::Both);
+
                     },
                     Err(e) => {
                         println!("new connectoin error------{}----{}--------", i,e);
@@ -142,54 +153,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn process(stream: TcpStream, payload: &Payload, tx: Sender<u8>) -> Result<(), Box<dyn Error>> {
+async fn docall(transport: &mut Framed<TcpStream,Http>, payload: &Payload, tx: Sender<u8>) -> Result<(), Box<dyn Error>> {
     
-    let mut transport = Framed::new(stream, Http);
+    let request = http::request::Builder::new()
+    .method(payload.method.clone())
+    .uri(payload.path.clone())
+    .header("Host", payload.host.clone())
+    .header("Content-Type", "application/json")
+    .body(payload.body.clone()).unwrap();
 
-    loop {
+    transport.send(request).await?;
 
-        let method = Method::from_bytes(payload.method.as_bytes()).unwrap();
-
-        //let count = GLOBAL_COUNT.fetch_add(1, Ordering::SeqCst);
-
-        let request = http::request::Builder::new()
-            .method(method)
-            .uri(payload.path.clone())
-            .header("Host", payload.host.clone())
-            .header("Content-Type", "application/json")
-            .body(payload.body.clone()).unwrap();
-
-        match transport.send(request).await {
-            Ok(_) => {
-                if let Some(response) = transport.next().await {
-                    match response {
-                        Ok(response) => if response.status()==StatusCode::OK {
-                            if let Err(_) = tx.send(1) {
-                                break;
-                            }
-                        } else {
-                            let _ = tx.send(1);
-                            //println!("connect close......................");
-                            break;
-                        },
-
-                        Err(e) => {
-                            println!("{}", e);
-                            break;
-                        }
-                    }
-                }
-            },
-
-            Err(e) => {
-                println!("{}", e);
-                break;
-            }
+    if let Some(response) = transport.next().await {
+        if response.unwrap().status() == StatusCode::OK {
+            tx.send(1).unwrap();
         }
-
     }
-
-    let _ = transport.get_ref().shutdown(std::net::Shutdown::Both);
 
     Ok(())
 }
