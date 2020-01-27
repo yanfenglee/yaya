@@ -14,7 +14,7 @@ extern crate clap;
 use clap::{Arg, App};
 
 use std::sync::atomic::{AtomicUsize, Ordering};
-static GLOBAL_COUNT: AtomicUsize = AtomicUsize::new(0);
+static GLOBAL_COUNT: AtomicUsize = AtomicUsize::new(1);
 
 fn opts() -> (u32, u32, String, String, String) {
     let matches = App::new("Simple http benchmark tool")
@@ -133,7 +133,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         // sum += rx.recv().unwrap() as u32;
 
-        let sum = GLOBAL_COUNT.fetch_or(1, Ordering::SeqCst);
+        let sum = GLOBAL_COUNT.load(Ordering::SeqCst);
         if sum % 10000 ==0 {
             println!("finished: {} , speed: {} qps ", sum, (sum as f64/elapsed) as u32);
         }
@@ -162,8 +162,6 @@ async fn process(stream: TcpStream, payload: &Payload, tx: Sender<u8>) -> Result
             .uri(payload.path.clone())
             .header("Host", payload.host.clone())
             .header("Content-Type", "application/json")
-            .header("Connection", "Keep-Alive")
-            .header("Keep-Alive", "timeout=99999999, max=99999999999999")
             .body(payload.body.clone()).unwrap();
 
         match transport.send(request).await {
