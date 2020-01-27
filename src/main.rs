@@ -13,8 +13,8 @@ use url::Url;
 extern crate clap;
 use clap::{Arg, App};
 
-//use std::sync::atomic::{AtomicUsize, Ordering};
-//static GLOBAL_COUNT: AtomicUsize = AtomicUsize::new(0);
+use std::sync::atomic::{AtomicUsize, Ordering};
+static GLOBAL_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 fn opts() -> (u32, u32, String, String, String) {
     let matches = App::new("Simple http benchmark tool")
@@ -124,14 +124,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
 
-    let mut sum = 0u32;
+    //let mut sum = 0;
 
     let now = Instant::now();
 
     loop {
         let elapsed = now.elapsed().as_secs_f64();
 
-        sum += rx.recv().unwrap() as u32;
+        // sum += rx.recv().unwrap() as u32;
+
+        let sum = GLOBAL_COUNT.fetch_or(1, Ordering::SeqCst);
         if sum % 10000 ==0 {
             println!("finished: {} , speed: {} qps ", sum, (sum as f64/elapsed) as u32);
         }
@@ -139,6 +141,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         if elapsed > duration as f64 {
             break;
         }
+
+        tokio::task::yield_now().await;
+
     }
 
     Ok(())
@@ -166,9 +171,12 @@ async fn process(stream: TcpStream, payload: &Payload, tx: Sender<u8>) -> Result
                 if let Some(response) = transport.next().await {
                     match response {
                         Ok(response) => if response.status()==StatusCode::OK {
-                            if let Err(_) = tx.send(1) {
-                                break;
-                            }
+                            // if let Err(_) = tx.send(1) {
+                            //     break;
+                            // }
+
+                            let _ = GLOBAL_COUNT.fetch_add(1, Ordering::SeqCst);
+
                         } else {
                             let _ = tx.send(1);
                             println!("receive connectoin close: {:?}", response);
