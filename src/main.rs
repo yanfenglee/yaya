@@ -82,6 +82,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
+    let method = Method::from_bytes(method.as_bytes()).unwrap();
+
     let payload = Payload {
         host: host + port.as_str(),
         path: String::from(url.path()),
@@ -148,15 +150,15 @@ async fn process(stream: TcpStream, payload: &Payload, tx: Sender<u8>) -> Result
 
     loop {
 
-        let method = Method::from_bytes(payload.method.as_bytes()).unwrap();
-
         //let count = GLOBAL_COUNT.fetch_add(1, Ordering::SeqCst);
 
         let request = http::request::Builder::new()
-            .method(method)
+            .method(payload.method.clone())
             .uri(payload.path.clone())
             .header("Host", payload.host.clone())
             .header("Content-Type", "application/json")
+            .header("Connection", "Keep-Alive")
+            .header("Keep-Alive", "timeout=99999999, max=99999999999999")
             .body(payload.body.clone()).unwrap();
 
         match transport.send(request).await {
@@ -169,7 +171,7 @@ async fn process(stream: TcpStream, payload: &Payload, tx: Sender<u8>) -> Result
                             }
                         } else {
                             let _ = tx.send(1);
-                            //println!("connect close......................");
+                            println!("receive connectoin close: {:?}", response);
                             break;
                         },
 
