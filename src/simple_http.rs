@@ -79,23 +79,16 @@ impl Decoder for Http {
             httparse::Status::Partial => return Ok(None),
         };
 
-        let (body_len, close) = {
+        let body_len = {
             let mut len = 0;
-            let mut close = false;
             for (_, header) in r.headers.iter().enumerate() {
                 let k = header.name.as_bytes();
                 let v = header.value;
                 if k == b"content-length" || k == b"Content-Length"{
                     len = std::str::from_utf8(v).unwrap().parse::<usize>().unwrap();
                 }
-                if k == b"Connection" {
-                    if v == b"close" {
-                        //println!("connection will close *******************");
-                        close = true;
-                    }
-                }
             }
-            (len,close)
+            len
         };
 
         let length = header_len + body_len;
@@ -104,14 +97,7 @@ impl Decoder for Http {
         }
 
         let code = match r.code {
-            Some(200) => 
-                //StatusCode::OK
-                if close {
-                    "205"
-                } else {
-                    "200"
-                },
-
+            Some(200) => "200",
             _ => "500",
         };
 

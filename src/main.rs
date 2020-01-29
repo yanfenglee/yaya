@@ -13,8 +13,8 @@ use url::Url;
 extern crate clap;
 use clap::{Arg, App};
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-static GLOBAL_COUNT: AtomicUsize = AtomicUsize::new(1);
+// use std::sync::atomic::{AtomicUsize, Ordering};
+// static GLOBAL_COUNT: AtomicUsize = AtomicUsize::new(1);
 
 fn opts() -> (u32, u32, String, String, String) {
     let matches = App::new("Simple http benchmark tool")
@@ -104,37 +104,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
         tokio::spawn(async move {
 
             loop {
-                //println!("new connectoin begin-----{}-------------", i);
                 let tx = tx.clone();
-                match TcpStream::connect(&addr).await {
-                    Ok(client) => {
-                        //println!("new connectoin------{}------------", i);
-                        if let Err(e) = process(client, &payload, tx).await {
-                            println!("failed to process connection; error = {}, i={}", e,i);
-                        }
-                    },
-                    Err(e) => {
-                        println!("new connectoin error------{}----{}--------", i,e);
-                        break;
-                    }
+                if let Err(e) = proc_conn(&addr, &payload, tx).await {
+                    println!("proc failed: {:?}", e);
+                    break;
+                    // if e.kind == Other {
+                    //     break;
+                    // }
                 }
+                
             }
             
         });
     }
 
 
-    //let mut sum = 0;
+    let mut sum = 0;
 
     let now = Instant::now();
 
     loop {
         let elapsed = now.elapsed().as_secs_f64();
 
-        // sum += rx.recv().unwrap() as u32;
+        sum += rx.recv().unwrap() as u32;
 
-        let sum = GLOBAL_COUNT.load(Ordering::SeqCst);
-        if sum % 10000 ==0 {
+        // let sum = GLOBAL_COUNT.load(Ordering::SeqCst);
+        if sum % 10000 == 0 {
             println!("finished: {} , speed: {} qps ", sum, (sum as f64/elapsed) as u32);
         }
 
@@ -142,14 +137,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
             break;
         }
 
-        tokio::task::yield_now().await;
+        //tokio::task::yield_now().await;
 
     }
 
     Ok(())
 }
 
-async fn process(stream: TcpStream, payload: &Payload, tx: Sender<u8>) -> Result<(), Box<dyn Error>> {
+async fn proc_conn(addr: &String, payload: &Payload, tx: Sender<u8>) -> Result<(), Box<dyn Error>> {
+    
+    let stream = TcpStream::connect(&addr).await?;
     
     let mut transport = Framed::new(stream, Http);
 
@@ -164,40 +161,16 @@ async fn process(stream: TcpStream, payload: &Payload, tx: Sender<u8>) -> Result
             .header("Content-Type", "application/json")
             .body(payload.body.clone()).unwrap();
 
-        match transport.send(request).await {
-            Ok(_) => {
-                if let Some(response) = transport.next().await {
-                    match response {
-                        Ok(response) => if response.status()==StatusCode::OK {
-                            // if let Err(_) = tx.send(1) {
-                            //     break;
-                            // }
+        transport.send(request).await?;
 
-                            let _ = GLOBAL_COUNT.fetch_add(1, Ordering::SeqCst);
-
-                        } else {
-                            let _ = tx.send(1);
-                            println!("receive connectoin close: {:?}", response);
-                            break;
-                        },
-
-                        Err(e) => {
-                            println!("{}", e);
-                            break;
-                        }
-                    }
-                }
-            },
-
-            Err(e) => {
-                println!("{}", e);
-                break;
+        if let Some(response) = transport.next().await {
+            if response?.status() == StatusCode::OK {
+                tx.send(1)?;
             }
+        } else {
+            println!("receive none");
         }
-
     }
 
-    let _ = transport.get_ref().shutdown(std::net::Shutdown::Both);
-
-    Ok(())
+    // Ok(())
 }
