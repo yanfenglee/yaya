@@ -99,6 +99,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let status = Arc::new(RwLock::new(ProcStatus::RUNNING));
 
+    // do benchmarking
     for _i in 0..connections {
         let tx = tx.clone();
         let addr = payload.host.clone();
@@ -111,15 +112,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let tx = tx.clone();
                 let status = status.clone();
                 if let Err(e) = proc_conn(&addr, &payload, tx, status).await {
-                    println!("proc failed: {:?}", e);
-                    break;
-                    // if e.kind == Other {
-                    //     break;
-                    // }
+                    println!("proc failed: {:?} , reconnect again", e);
                 } else {
-                    println!("proc {} terminate!", _i);
+                    // println!("proc {} terminate!", _i);
+                    break;
                 }
-                
             }
             
         });
@@ -127,15 +124,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 
     let mut sum = 0;
-
     let now = Instant::now();
 
-    loop {
+    // calc performance
+    while *status.read().unwrap() == ProcStatus::RUNNING {
         let elapsed = now.elapsed().as_secs_f64();
 
         sum += rx.recv().unwrap() as u32;
 
-        // let sum = GLOBAL_COUNT.load(Ordering::SeqCst);
         if sum % 10000 == 0 {
             println!("finished: {} , speed: {} qps ", sum, (sum as f64/elapsed) as u32);
         }
@@ -143,12 +139,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
         if elapsed > duration as f64 {
             println!("time finished! see last result");
             *status.write().unwrap() = ProcStatus::TERMINATE;
-            break;
         }
 
         //tokio::task::yield_now().await;
 
     }
+
+    // wait proc terminate
+    let mut finished = 0;
+    while finished != connections {
+        if rx.recv().unwrap() == 2 {
+            finished += 1;
+        }
+    }
+
+    println!("all finished!!!");
 
     Ok(())
 }
@@ -163,6 +168,7 @@ async fn proc_conn(addr: &String, payload: &Payload, tx: Sender<u8>, status: Arc
 
         //let count = GLOBAL_COUNT.fetch_add(1, Ordering::SeqCst);
         if *status.read().unwrap() == ProcStatus::TERMINATE {
+            tx.send(2)?;
             break;
         }
 
