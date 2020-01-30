@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let port = match url.port() {
         Some(p) => format!(":{}",p),
-        None => String::from(""),
+        None => String::from(":80"),
     };
 
     let host = match url.host_str() {
@@ -111,37 +111,45 @@ async fn main() -> Result<(), Box<dyn Error>> {
             loop {
                 let tx = tx.clone();
                 let status = status.clone();
-                if let Err(e) = proc_conn(&addr, &payload, tx, status).await {
-                    println!("proc failed: {:?} , reconnect again", e);
+                if *status.read().unwrap() == ProcStatus::TERMINATE {
+                    let _ = tx.send(2);
+                    break;
+                }
+
+                if let Err(_e) = proc_conn(&addr, &payload, tx, status).await {
+                    //println!("proc failed: {:?} , reconnect again", e);
                 } else {
                     // println!("proc {} terminate!", _i);
                     break;
-                }
+                }                
             }
             
         });
     }
 
 
-    let mut sum = 0;
+    let mut sum = 1;
     let now = Instant::now();
 
     // calc performance
     while *status.read().unwrap() == ProcStatus::RUNNING {
         let elapsed = now.elapsed().as_secs_f64();
 
-        sum += rx.recv().unwrap() as u32;
+        if let Ok(n) = rx.try_recv() {
+            sum += n as u32;
+        }
 
         if sum % 10000 == 0 {
             println!("finished: {} , average speed: {} qps ", sum, (sum as f64/elapsed) as u32);
         }
 
         if elapsed > duration as f64 {
-            println!("time finished! see last result");
+            println!("finished: {} , average speed: {} qps ", sum, (sum as f64/elapsed) as u32);
+            println!("time over! see last result");
             *status.write().unwrap() = ProcStatus::TERMINATE;
         }
 
-        //tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
 
     }
 
