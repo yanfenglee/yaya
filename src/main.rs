@@ -194,7 +194,7 @@ async fn proc_conn(addr: &String, payload: &Payload, tx: Sender<u8>, status: Arc
                 tx.send(1)?;
             }
         } else {
-            println!("receive none");
+            // println!("receive none");
         }
     }
 
