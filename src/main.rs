@@ -7,8 +7,9 @@ use tokio::stream::StreamExt;
 use tokio_util::codec::{Framed};
 use std::time::{Instant};
 use yaya::simple_http::Http;
-use yaya::Payload;
+use yaya::{Payload, ProcStatus};
 use url::Url;
+use std::sync::{Arc, RwLock};
 
 extern crate clap;
 use clap::{Arg, App};
@@ -96,21 +97,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let (tx, rx): (Sender<u8>, Receiver<u8>) = channel();
 
-    for i in 0..connections {
+    let status = Arc::new(RwLock::new(ProcStatus::RUNNING));
+
+    for _i in 0..connections {
         let tx = tx.clone();
         let addr = payload.host.clone();
         let payload = payload.clone();
+        let status = status.clone();
 
         tokio::spawn(async move {
 
             loop {
                 let tx = tx.clone();
-                if let Err(e) = proc_conn(&addr, &payload, tx).await {
+                let status = status.clone();
+                if let Err(e) = proc_conn(&addr, &payload, tx, status).await {
                     println!("proc failed: {:?}", e);
                     break;
                     // if e.kind == Other {
                     //     break;
                     // }
+                } else {
+                    println!("proc {} terminate!", _i);
                 }
                 
             }
@@ -134,6 +141,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if elapsed > duration as f64 {
+            println!("time finished! see last result");
+            *status.write().unwrap() = ProcStatus::TERMINATE;
             break;
         }
 
@@ -144,7 +153,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn proc_conn(addr: &String, payload: &Payload, tx: Sender<u8>) -> Result<(), Box<dyn Error>> {
+async fn proc_conn(addr: &String, payload: &Payload, tx: Sender<u8>, status: Arc<RwLock<ProcStatus>>) -> Result<(), Box<dyn Error>> {
     
     let stream = TcpStream::connect(&addr).await?;
     
@@ -153,6 +162,9 @@ async fn proc_conn(addr: &String, payload: &Payload, tx: Sender<u8>) -> Result<(
     loop {
 
         //let count = GLOBAL_COUNT.fetch_add(1, Ordering::SeqCst);
+        if *status.read().unwrap() == ProcStatus::TERMINATE {
+            break;
+        }
 
         let request = http::request::Builder::new()
             .method(payload.method.clone())
@@ -172,5 +184,5 @@ async fn proc_conn(addr: &String, payload: &Payload, tx: Sender<u8>) -> Result<(
         }
     }
 
-    // Ok(())
+    Ok(())
 }

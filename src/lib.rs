@@ -7,4 +7,10 @@ pub struct Payload {
     pub body: String,
 }
 
+#[derive(PartialEq, Eq)]
+pub enum ProcStatus {
+    RUNNING = 0,
+    TERMINATE
+}
+
 pub mod simple_http;
