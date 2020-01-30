@@ -133,7 +133,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         sum += rx.recv().unwrap() as u32;
 
         if sum % 10000 == 0 {
-            println!("finished: {} , speed: {} qps ", sum, (sum as f64/elapsed) as u32);
+            println!("finished: {} , average speed: {} qps ", sum, (sum as f64/elapsed) as u32);
         }
 
         if elapsed > duration as f64 {
