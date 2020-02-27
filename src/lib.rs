@@ -12,5 +12,3 @@ pub enum ProcStatus {
     RUNNING = 0,
     TERMINATE
 }
-
-pub mod simple_http;

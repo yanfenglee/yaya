@@ -1,6 +1,5 @@
-use futures::SinkExt;
+//use futures::SinkExt;
 use std::sync::mpsc::{Sender,Receiver,channel};
-use http::{StatusCode, Method};
 use std::{error::Error};
 use tokio::net::TcpStream;
 use tokio::stream::StreamExt;
@@ -8,8 +7,9 @@ use tokio_util::codec::{Framed};
 use std::time::{Instant};
 use yaya::simple_http::Http;
 use yaya::{Payload, ProcStatus};
-use url::Url;
 use std::sync::{Arc, RwLock};
+
+use hyper::{Client, Request, Body};
 
 extern crate clap;
 use clap::{Arg, App};
@@ -62,38 +62,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let (connections, duration, method, body, urlstr) = opts();
 
-    let url = match Url::parse(urlstr.as_str()) {
-        Ok(u) => u,
-        Err(_) => {
-            println!("url error, example: http://localhost:8080/");
-            return Ok(());
-        }
-    };
-
-    let port = match url.port() {
-        Some(p) => format!(":{}",p),
-        None => String::from(":80"),
-    };
-
-    let host = match url.host_str() {
-        Some(h) => String::from(h),
-        None => {
-            println!("url error, e.g: http://localhost:8080/");
-            return Ok(());
-        }
-    };
-
-    let method = Method::from_bytes(method.as_bytes()).unwrap();
-
-    let payload = Payload {
-        host: host + port.as_str(),
-        path: String::from(url.path()),
-        method: method,
-        body: body,
-    };
-
-    println!("{:?}", payload);
-
 
     let (tx, rx): (Sender<u8>, Receiver<u8>) = channel();
 
@@ -108,6 +76,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         tokio::spawn(async move {
 
+            let client = Client::new();
+
             loop {
                 let tx = tx.clone();
                 let status = status.clone();
@@ -116,12 +86,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     break;
                 }
 
-                if let Err(_e) = proc_conn(&addr, &payload, tx, status).await {
-                    //println!("proc failed: {:?} , reconnect again", e);
-                } else {
-                    // println!("proc {} terminate!", _i);
-                    break;
-                }                
+                let req = Request::builder()
+                    .method("GET")
+                    .uri("http://localhost:3000/")
+                    .body(Body::from("Hallo"))
+                    .expect("request build");
+
+                let response = client.request(req).await.expect("request error");
+                if response.status().is_success() {
+                    tx.send(1).expect("send finish error");
+                }
             }
             
         });
@@ -162,41 +136,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     println!("all finished!!!");
-
-    Ok(())
-}
-
-async fn proc_conn(addr: &String, payload: &Payload, tx: Sender<u8>, status: Arc<RwLock<ProcStatus>>) -> Result<(), Box<dyn Error>> {
-    
-    let stream = TcpStream::connect(&addr).await?;
-    
-    let mut transport = Framed::new(stream, Http);
-
-    loop {
-
-        //let count = GLOBAL_COUNT.fetch_add(1, Ordering::SeqCst);
-        if *status.read().unwrap() == ProcStatus::TERMINATE {
-            tx.send(2)?;
-            break;
-        }
-
-        let request = http::request::Builder::new()
-            .method(payload.method.clone())
-            .uri(payload.path.clone())
-            .header("Host", payload.host.clone())
-            .header("Content-Type", "application/json")
-            .body(payload.body.clone()).unwrap();
-
-        transport.send(request).await?;
-
-        if let Some(response) = transport.next().await {
-            if response?.status() == StatusCode::OK {
-                tx.send(1)?;
-            }
-        } else {
-            // println!("receive none");
-        }
-    }
 
     Ok(())
 }
