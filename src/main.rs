@@ -1,12 +1,10 @@
 //use futures::SinkExt;
 use std::sync::mpsc::{Sender,Receiver,channel};
 use std::{error::Error};
-use tokio::net::TcpStream;
 use tokio::stream::StreamExt;
 use tokio_util::codec::{Framed};
 use std::time::{Instant};
-use yaya::simple_http::Http;
-use yaya::{Payload, ProcStatus};
+use yaya::{ProcStatus};
 use std::sync::{Arc, RwLock};
 
 use hyper::{Client, Request, Body};
@@ -70,8 +68,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // do benchmarking
     for _i in 0..connections {
         let tx = tx.clone();
-        let addr = payload.host.clone();
-        let payload = payload.clone();
         let status = status.clone();
 
         tokio::spawn(async move {
