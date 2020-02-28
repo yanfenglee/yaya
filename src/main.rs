@@ -1,8 +1,5 @@
-//use futures::SinkExt;
 use std::sync::mpsc::{Sender,Receiver,channel};
 use std::{error::Error};
-use tokio::stream::StreamExt;
-use tokio_util::codec::{Framed};
 use std::time::{Instant};
 use yaya::{ProcStatus};
 use std::sync::{Arc, RwLock};
@@ -49,7 +46,7 @@ fn opts() -> (u32, u32, String, String, String) {
     let duration: u32 = matches.value_of("duration").unwrap_or("10").parse().unwrap();
     let method: String = matches.value_of("method").unwrap_or("GET").parse().unwrap();
     let body: String = matches.value_of("body").unwrap_or("{}").parse().unwrap();
-    let url = matches.value_of("url").unwrap().to_string();
+    let url: String = matches.value_of("url").unwrap().into();
 
     (connections, duration, method, body, url)
     
@@ -69,6 +66,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     for _i in 0..connections {
         let tx = tx.clone();
         let status = status.clone();
+        let method = method.clone();
+        let body = body.clone();
+        let urlstr = urlstr.clone();
 
         tokio::spawn(async move {
 
@@ -83,14 +83,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 let req = Request::builder()
-                    .method(method.clone())
+                    .method(method.clone().as_str())
                     .uri(urlstr.clone())
                     .body(Body::from(body.clone()))
                     .expect("request build");
 
-                let response = client.request(req).await.expect("request error");
-                if response.status().is_success() {
-                    tx.send(1).expect("send finish error");
+                if let Ok(response) = client.request(req).await {
+                    if response.status().is_success() {
+                        tx.send(1).expect("send finish error");
+                    }
                 }
             }
             
