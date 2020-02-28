@@ -83,9 +83,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 let req = Request::builder()
-                    .method("GET")
-                    .uri("http://localhost:3000/")
-                    .body(Body::from("Hallo"))
+                    .method(method.clone())
+                    .uri(urlstr.clone())
+                    .body(Body::from(body.clone()))
                     .expect("request build");
 
                 let response = client.request(req).await.expect("request error");
